@@ -28,6 +28,7 @@ PUB deltaboard
   repeat
     xorx := v2 ^ db
     db := v2
+    
 
 PUB pollboard
   dira[12]~~
