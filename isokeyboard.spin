@@ -2,108 +2,128 @@ CON
   _clkmode = xtal1 + pll16x
   _xinfreq = 5_000_000
 OBJ                                  'include 2 ViewPort objects:
- vp    : "Terminal"                 'transfers data to/from PC
+ vp    : "Conduit"                 'transfers data to/from PC
  qs    : "QuickSample"               'samples INA continuously in 1 cog- up to 20Msps
+ sr    : "Simple_Serial"
 VAR
   long stack[20]
   long stack2[20]
   long frame[400]
-  long tmpscan
-  long line1state,line2state,line3state,line4state,line5state,line6state
-  long line1persist,xorx1
-  long line2persist,xorx2
-  long line3persist,xorx3
-  long line4persist,xorx4
-  long line5persist,xorx5
-  long line6persist,xorx6
-  
+  long line1persist,line2persist,line3persist,line4persist,line5persist,line6persist
+  long line1s
 CON
-  SHLD = 23 'Low means load in.  High means load-out.
-  CLK = 24  'Data shifts on a positive transition.
-  SER = 25  'DataZ
+  SHLD = 25 'Low means load in.  High means load-out.
+  CLK = 26  'Data shifts on a positive transition.
+  SER = 27  'DataZ
 PUB main
   vp.config(string("start:terminal::terminal:1"))
   vp.register(qs.sampleINA(@frame,1))'sample INA into <frame> array
   optional_configure_viewport
   vp.config(string("var:io"))
-  vp.config(string("var:line1state(base=2),line2state(base=2),line3state(base=2)"))
-  vp.config(string("var:line4state(base=2),line5state(base=2),line6state(base=2)"))
+  vp.config(string("var:line1persist(base=2),line2persist(base=2),line3persist(base=2)"))
+  vp.config(string("var:line4persist(base=2),line5persist(base=2),line6persist(base=2)"))
+  vp.config(string("var:line1s(base=2)"))
   vp.config(string("start:dll"))
-  vp.share(@line1state,@line6state)          'share variable
+  vp.share(@line1persist,@line1s)          'share variable
+
+  sr.init(1,0,9600)
+  sr.str(String("Hello World"))
+  sr.tx(13)
+  sr.tx(10)
+'  sr.str(String("Hello again!"))
+
   cognew(pollboard, @stack)
+  cognew(delta, @stack2)
+
+PUB delta | xorx, ptr,t
+  repeat
+    xorx := line1persist ^ line1s
+    if xorx == 0
+        return
+    sr.str(String("X"))
+{{    repeat ptr from 31 to 0
+      t := line1persist & $0000_0000_0000_0001
+      if t == 1
+        sr.str(String("Pin "))
+        sr.str(ptr)
+        sr.tx(13)
+        sr.tx(10)
+      line1persist ->= 1
+ }}
  
 PUB pollboard
-  dira[9]~~
-  dira[10]~~
-  dira[11]~~
-  dira[12]~~
-  dira[13]~~
-  dira[14]~~
+  dira[1]~~
+  dira[2]~~
+  dira[3]~~
+  dira[4]~~
+  dira[5]~~
+  dira[6]~~
   dira[SHLD]~~ 'We write this.
   dira[CLK]~~  'We write this.
   dira[SER]~   'We read this.
 
   repeat
-    outa[8]~~
-    outa[9]~
-    outa[10]~
-    outa[11]~
-    outa[12]~
-    outa[13]~
-    outa[14]~~
-    line1state := singlescan
-    outa[9]~
-    outa[10]~
-    outa[11]~
-    outa[12]~
-    outa[13]~~
-    outa[14]~
-    line2state := singlescan
-    outa[9]~
-    outa[10]~
-    outa[11]~
-    outa[12]~~
-    outa[13]~
-    outa[14]~
-    line3state := singlescan
-    outa[9]~
-    outa[10]~
-    outa[11]~~
-    outa[12]~
-    outa[13]~
-    outa[14]~
-    line4state := singlescan
-    outa[9]~
-    outa[10]~~
-    outa[11]~
-    outa[12]~
-    outa[13]~
-    outa[14]~
-    line5state := singlescan
-    outa[9]~~
-    outa[10]~
-    outa[11]~
-    outa[12]~
-    outa[13]~
-    outa[14]~
-    line6state := singlescan
+    outa[1]~
+    outa[2]~
+    outa[3]~
+    outa[4]~
+    outa[5]~
+    outa[6]~~
+    line1persist := singlescan
+    outa[1]~
+    outa[2]~
+    outa[3]~
+    outa[4]~
+    outa[5]~~
+    outa[6]~
+    line2persist := singlescan    
+    outa[1]~
+    outa[2]~
+    outa[3]~
+    outa[4]~~
+    outa[5]~
+    outa[6]~
+    line3persist := singlescan
+    outa[1]~
+    outa[2]~
+    outa[3]~~
+    outa[4]~
+    outa[5]~
+    outa[6]~
+    line4persist := singlescan
+    outa[1]~
+    outa[2]~~
+    outa[3]~
+    outa[4]~
+    outa[5]~
+    outa[6]~
+    line5persist := singlescan
+    outa[1]~~
+    outa[2]~
+    outa[3]~
+    outa[4]~
+    outa[5]~
+    outa[6]~
+    line6persist := singlescan
 
 
-PUB singlescan
+PUB singlescan | tmpscan,t,b
    outa[SHLD]~ 'Load 'em up!
-   outa[CLK]~~ 'Get clock in correct position for...                    
+   outa[CLK]~ 'Get clock in correct position for...                    
    outa[SHLD]~~'Clock transitions now shift data.                   
-   tmpscan := tmpscan << 1 + ina[SER] 'First bit is already in position.
-   repeat (32)           
-     outa[CLK]~~            'Transit up and shift         
-     tmpscan := tmpscan << 1 + ina[SER] 'Read bit    
-     outa[CLK]~ 'Drop the clock in preparation for next cycle     
-   return tmpscan  
+
+   repeat t from 31 to 0
+     outa[CLK]~ 'Transit up and shift
+     
+     tmpscan := tmpscan << 1 + ina[SER] 'Read bit
+     outa[CLK]~~ 'Drop the clock in preparation for next cycle 
+  
+   return tmpscan
   
   
   
 pub optional_configure_viewport  
-  vp.config(string("lsa:view=io,timescale=1ms,trigger=io[23]r"))
+  vp.config(string("lsa:view=io,timescale=1ms,trigger=io[25]r"))
   vp.config(string("start:lsa"))
 
 
