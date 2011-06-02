@@ -1,111 +1,63 @@
 CON
   _clkmode = xtal1 + pll16x
   _xinfreq = 5_000_000
-OBJ                                  'include 2 ViewPort objects:
- vp    : "Terminal"                 'transfers data to/from PC
- qs    : "QuickSample"               'samples INA continuously in 1 cog- up to 20Msps
-VAR
-  long stack[20]
-  long stack2[20]
-  long frame[400]
-  long tmpscan
-  long line1state,line2state,line3state,line4state,line5state,line6state
-  long line1persist,xorx1
-  long line2persist,xorx2
-  long line3persist,xorx3
-  long line4persist,xorx4
-  long line5persist,xorx5
-  long line6persist,xorx6
-  
-CON
-  SHLD = 23 'Low means load in.  High means load-out.
-  CLK = 24  'Data shifts on a positive transition.
-  SER = 25  'DataZ
+
 PUB main
-  vp.config(string("start:terminal::terminal:1"))
-  vp.register(qs.sampleINA(@frame,1))'sample INA into <frame> array
-  optional_configure_viewport
-  vp.config(string("var:io"))
-  vp.config(string("var:line1state(base=2),line2state(base=2),line3state(base=2)"))
-  vp.config(string("var:line4state(base=2),line5state(base=2),line6state(base=2)"))
-  vp.config(string("start:dll"))
-  vp.share(@line1state,@line6state)          'share variable
-  cognew(pollboard, @stack)
- 
-PUB pollboard
-  dira[9]~~
-  dira[10]~~
-  dira[11]~~
-  dira[12]~~
-  dira[13]~~
-  dira[14]~~
-  dira[SHLD]~~ 'We write this.
-  dira[CLK]~~  'We write this.
-  dira[SER]~   'We read this.
-
-  repeat
-    outa[8]~~
-    outa[9]~
-    outa[10]~
-    outa[11]~
-    outa[12]~
-    outa[13]~
-    outa[14]~~
-    line1state := singlescan
-    outa[9]~
-    outa[10]~
-    outa[11]~
-    outa[12]~
-    outa[13]~~
-    outa[14]~
-    line2state := singlescan
-    outa[9]~
-    outa[10]~
-    outa[11]~
-    outa[12]~~
-    outa[13]~
-    outa[14]~
-    line3state := singlescan
-    outa[9]~
-    outa[10]~
-    outa[11]~~
-    outa[12]~
-    outa[13]~
-    outa[14]~
-    line4state := singlescan
-    outa[9]~
-    outa[10]~~
-    outa[11]~
-    outa[12]~
-    outa[13]~
-    outa[14]~
-    line5state := singlescan
-    outa[9]~~
-    outa[10]~
-    outa[11]~
-    outa[12]~
-    outa[13]~
-    outa[14]~
-    line6state := singlescan
+  cognew(@entrypoint, 0)
 
 
-PUB singlescan
-   outa[SHLD]~ 'Load 'em up!
-   outa[CLK]~~ 'Get clock in correct position for...                    
-   outa[SHLD]~~'Clock transitions now shift data.                   
-   tmpscan := tmpscan << 1 + ina[SER] 'First bit is already in position.
-   repeat (32)           
-     outa[CLK]~~            'Transit up and shift         
-     tmpscan := tmpscan << 1 + ina[SER] 'Read bit    
-     outa[CLK]~ 'Drop the clock in preparation for next cycle     
-   return tmpscan  
+VAR
+  long r1
   
-  
-  
-pub optional_configure_viewport  
-  vp.config(string("lsa:view=io,timescale=1ms,trigger=io[23]r"))
-  vp.config(string("start:lsa"))
-
-
 DAT
-  janko byte  0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
+              org 0
+entrypoint    or DIRA, DIRMASK                  ' Set pins to stun
+:outerloop    andn OUTA, LOADPIN                ' Set LD to low
+              andn OUTA, CLKPIN                 ' Set clockpin low
+              or OUTA, LOADPIN                  ' Set Load high
+              mov bitcntr, #32                  ' We're reading 32 bits...
+:loop         andn OUTA, CLKPIN                 ' Set LD to low (Yes, this is redundant
+                              
+              ror INA, #28 NR,WC                ' C should contain value of CLK (27)
+              rcl KEYSTATE, #1                  ' C should now be pushed into LSB of keystate
+              or OUTA, CLKPIN                   ' Set CLK high
+              djnz bitcntr, #:loop              ' Around the loop we go
+              jmp #:outerloop                   ' ... and back for another snapshot
+
+DIRMASK       long      %00000110_00000000_00000000_01111111
+LOADPIN       long      %00000010_00000000_00000000_00000000
+CLKPIN        long      %00000100_00000000_00000000_00000000  
+SERPIN        long      %00001000_00000000_00000000_00000000
+BITCNTR       long      $0
+KEYSTATE      long   
+
+
+{{
+
+
+syncpll_1     mov       dira,dira1
+              mov       ctra,ctra1
+              mov       frqa,frqa1
+              waitpeq   one1,one1
+              mov       phsa,#0
+:forever      jmp       #:forever
+
+dira1         long      $0000_0002
+ctra1         long      %00010<<26|%111<<23|1
+frqa1         long      $0800_0000
+one1          long      1
+
+              org       0
+syncpll_2     mov       dira,dira2
+              mov       ctra,ctra2
+              mov       frqa,frqa2
+              waitpeq   one2,one2
+              mov       phsa,#0
+:forever      jmp       #:forever
+
+dira2         long      $0000_0004
+ctra2         long      %00010<<26|%111<<23|2
+frqa2         long      $0800_0000
+one2          long      1
+
+}}
