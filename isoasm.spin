@@ -3,10 +3,10 @@ CON
   _xinfreq = 5_000_000
 
 OBJ                                  'include 2 ViewPort objects:
-'  vp    : "Conduit"                   'transfers data to/from PC
-'  qs    : "QuickSample"               'samples INA continuously in 1 cog- up to 20Msps
+  vp    : "Conduit"                   'transfers data to/from PC
+  qs    : "QuickSample"               'samples INA continuously in 1 cog- up to 20Msps
 VAR
-'  long frame[400]
+  long frame[400]
   long r1  
   long r2  
   long r3  
@@ -22,20 +22,82 @@ PUB main
   r5 := $EEEEEEEE
   r6 := $FFFFFFFF
 
-'  vp.register(qs.sampleINA(@frame,1))'sample INA into <frame> array
-'  vp.config(string("var:io"))
-'  vp.config(string("var:r1(base=2),r2(base=2),r3(base=2),r4(base=2),r5(base=2),r6(base=2)"))
-'  vp.share(@r1,@r6)          'share variable
-   cognew(@entrypoint, @r1)
-   cognew(@fakeentry, @r1)
+  vp.register(qs.sampleINA(@frame,1))'sample INA into <frame> array
+  vp.config(string("var:io(base=2)"))
+  vp.config(string("var:r1(base=2),r2(base=2),r3(base=2),r4(base=2),r5(base=2),r6(base=2)"))
+  vp.share(@r1,@r6)          'share variable
+  cognew(@entrypoint, @r1)
+'   cognew(@fakeentry, @r1)
+   cognew(@delta, @r1)
 
 
 DAT
               org 0
+delta         mov baseptr, PAR              
+
+' Soooo... read the row scan data from main memory...
+deltaloop     rdlong ROWDATA, baseptr
+' Next, we must check for changes.  If no changae, we can look back around.
+              xor ROWDATA, PERSDATA             NR,WZ
+        IF_Z  mov DEBUGFLAG, #1     ' IF_Z means no change
+        IF_Z  jmp #deltaloop        ' Short Circuit
+
+' If we reached this point, then there must be a change.
+              mov count, #$20   ' We have 32 keys
+
+:inner        rol PERSDATA, count  NR,WZ
+        IF_NZ jmp #:notedon
+              jmp #:notedoff
+
+:notedon      rol ROWDATA, count   NR,WZ
+              ' Note was already on
+        IF_Z  jmp #:sendnoteoff
+              djnz count, #:inner  ' Note still on - no change.  Decrement + loop
+              jmp #deltaloop
+
+        
+:notedoff     rol ROWDATA, count   NR,WZ
+              ' Note was already off       
+       IF_NZ  jmp #:sendnoteon
+              djnz count, #:inner
+              jmp #deltaloop
+                                                                   
+:sendnoteoff  nop
+              djnz count, #:inner
+              mov PERSDATA, ROWDATA
+              jmp #deltaloop
+              
+:sendnoteon   nop
+              nop
+              djnz count, #:inner
+              mov PERSDATA, ROWDATA
+              jmp #deltaloop
+
+
+
+              mov PERSDATA, ROWDATA
+end           jmp #deltaloop
+            
+
+count         long      0
+baseptr       long      0
+ROWDATA       long      0
+PERSDATA      long      0
+XOREDATA      long      0
+SEP           long      %11011110_10101101_10111110_11101111
+DEBUGFLAG     long      0
+
+
+
+
+
+                                                                                                        
+{{ The following section fakes a key being pressed and release in global r1.  Used for testing}}                                     
+              org 0
 fakeentry     mov r1ptr, PAR
               mov time, CNT
               add time, period
-
+                            
 :loop         waitcnt time, period
               mov tmp, #1
               wrlong tmp, r1ptr
