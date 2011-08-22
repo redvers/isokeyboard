@@ -12,104 +12,66 @@ VAR
   long r3  
   long r4  
   long r5  
-  long r6                      
+  long r6
+  long s1
+  long s2
+  long s3
+  long s4
+  long s5
+  long s6
+  long debugcount
   
 PUB main
-  r1 := $AAAAAAAA
-  r2 := $BBBBBBBB
-  r3 := $CCCCCCCC
-  r4 := $DDDDDDDD
-  r5 := $EEEEEEEE
-  r6 := $FFFFFFFF
+  r1 := $0 ' top row current state
+  r2 := $0 ' you know, the next row
+  r3 := $0 ' yadda yadda
+  r4 := $0 ' ditto
+  r5 := $0 ' ditto
+  r6 := $0 ' bottom row current state
+  s1 := $0 ' top row historical state
+  s2 := $0 ' you know, the next row
+  s3 := $0 ' yadda yadda
+  s4 := $0 ' ditto
+  s5 := $0 ' ditto
+  s6 := $0 ' bottom row historical state
+  debugcount := $0
 
   vp.register(qs.sampleINA(@frame,1))'sample INA into <frame> array
   vp.config(string("var:io(base=2)"))
-  vp.config(string("var:r1(base=2),r2(base=2),r3(base=2),r4(base=2),r5(base=2),r6(base=2)"))
-  vp.share(@r1,@r6)          'share variable
+  vp.config(string("var:r1(base=2),r2(base=2),r3(base=2),r4(base=2),r5(base=2),r6(base=2),s1(base=2),s2(base=2),s3(base=2),s4(base=2),s5(base=2),s6(base=2),debugcount"))
+  vp.share(@r1,@debugcount)          'share variable
   cognew(@entrypoint, @r1)
-'   cognew(@fakeentry, @r1)
-   cognew(@delta, @r1)
+'  cognew(@delta, @r1)
+
+  repeat
+    if r1 ^ s1
+      compare(r1, s1)
+      s1 := r1
+    if r2 ^ s2
+      compare(r2, s2)
+      s2 := r2
+    if r3 ^ s3
+      compare(r3, s3)
+      s3 := r3
+    if r4 ^ s4
+      compare(r4, s4)
+      s4 := r4
+    if r5 ^ s5
+      compare(r5, s5)
+      s5 := r5
+    if r6 ^ s6
+      compare(r6, s6)
+      s6 := r6
+    
+    
+    
+PRI compare(x,y)
+  y := x
+  debugcount += 1
 
 
 DAT
-              org 0
-delta         mov baseptr, PAR              
-
-' Soooo... read the row scan data from main memory...
-deltaloop     rdlong ROWDATA, baseptr
-' Next, we must check for changes.  If no changae, we can look back around.
-              xor ROWDATA, PERSDATA             NR,WZ
-        IF_Z  mov DEBUGFLAG, #1     ' IF_Z means no change
-        IF_Z  jmp #deltaloop        ' Short Circuit
-
-' If we reached this point, then there must be a change.
-              mov count, #$20   ' We have 32 keys
-
-:inner        rol PERSDATA, count  NR,WZ
-        IF_NZ jmp #:notedon
-              jmp #:notedoff
-
-:notedon      rol ROWDATA, count   NR,WZ
-              ' Note was already on
-        IF_Z  jmp #:sendnoteoff
-              djnz count, #:inner  ' Note still on - no change.  Decrement + loop
-              jmp #deltaloop
-
-        
-:notedoff     rol ROWDATA, count   NR,WZ
-              ' Note was already off       
-       IF_NZ  jmp #:sendnoteon
-              djnz count, #:inner
-              jmp #deltaloop
-                                                                   
-:sendnoteoff  nop
-              djnz count, #:inner
-              mov PERSDATA, ROWDATA
-              jmp #deltaloop
-              
-:sendnoteon   nop
-              nop
-              djnz count, #:inner
-              mov PERSDATA, ROWDATA
-              jmp #deltaloop
-
-
-
-              mov PERSDATA, ROWDATA
-end           jmp #deltaloop
-            
-
-count         long      0
-baseptr       long      0
-ROWDATA       long      0
-PERSDATA      long      0
-XOREDATA      long      0
-SEP           long      %11011110_10101101_10111110_11101111
-DEBUGFLAG     long      0
-
-
-
-
-
-                                                                                                        
-{{ The following section fakes a key being pressed and release in global r1.  Used for testing}}                                     
-              org 0
-fakeentry     mov r1ptr, PAR
-              mov time, CNT
-              add time, period
-                            
-:loop         waitcnt time, period
-              mov tmp, #1
-              wrlong tmp, r1ptr
-              waitcnt time, period
-              mov tmp, #0
-              wrlong tmp, r1ptr              
-              jmp #:loop
-time          long      0
-period        long      80*1000
-r1ptr         res 1
-tmp           res 1
-
+                                                                                                    
               org 0 
 entrypoint    mov Mem, PAR
               or DIRA, DIRMASK
@@ -130,6 +92,7 @@ entrypoint    mov Mem, PAR
               djnz bitcntr, #:loop ' Around the loop we go
 
               ' First things first, copy the current value of
+
               ' SCANPIN to CalcPin
               mov MemVec, Mem
               'sub MemVec, #4
@@ -149,7 +112,7 @@ entrypoint    mov Mem, PAR
         IF_NZ mov SCANPIN, #1       ' If it is, sets the active row to 1.
               jmp #:outerloop       ' ... and back for another snapshot
 
-DIRMASK       long %00000110_00000000_00000000_01111110
+DIRMASK       long %00000110_00000000_00000000_01111111
 LOADPIN       long %00000010_00000000_00000000_00000000
 CLKPIN        long %00000100_00000000_00000000_00000000
 SERPIN        long %00001000_00000000_00000000_00000000
@@ -159,3 +122,119 @@ BITCNTR       long %00000000_00000000_00000000_00000000
 KEYSTATE      long %00000000_00000000_00000000_00000000
 Mem           long %00000000_00000000_00000000_00000000
 MemVec        long %00000000_00000000_00000000_00000000                 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+org 0
+delta         mov baseptr, PAR              
+
+' Soooo... read the row scan data from main memory...
+deltaloop     rdlong ROWDATA, baseptr
+' Next, we must check for changes.  If no changae, we can look back around.
+              xor ROWDATA, PERSDATA             NR,WZ
+        IF_Z  jmp #deltaloop        ' Short Circuit
+
+' If we reached this point, then there must be a change.
+              mov count, #$20   ' We have 32 keys
+
+:inner        rol PERSDATA, count  NR,WZ
+        IF_NZ jmp #:notedon
+              jmp #:notedoff
+
+:notedon      rol ROWDATA, count   NR,WZ
+              
+        IF_Z  jmp #:sendnoteoff
+              djnz count, #:inner  ' Note still on - no change.  Decrement + loop
+              mov PERSDATA, ROWDATA
+              jmp #deltaloop
+
+        
+:notedoff     rol ROWDATA, count   NR,WZ
+              ' Note was already off       
+       IF_NZ  jmp #:sendnoteon
+              djnz count, #:inner
+              mov PERSDATA, ROWDATA
+              jmp #deltaloop
+                                                                   
+:sendnoteoff  mov txwork, #83
+              jmp #:transmit
+              
+:sendnoteon   mov txwork, #82
+              jmp #:transmit
+
+:transmit      or txwork, STOP_BITS               ' set stop bit(s)
+               shl     txwork, #1                      ' add start bit
+               mov     txcount, #11                    ' start + 8 data + 2 stop
+               mov     txtimer, bitticks               ' load bit timing
+               add     txtimer, cnt                    ' sync with system counter
+
+:txbit         shr     txwork, #1              wc      ' move bit0 to C
+               muxc    outa, txmask                    ' output the bit
+               waitcnt txtimer, bitticks               ' let timer expire, reload   
+               djnz    txcount, #:txbit                 ' update bit count
+
+               djnz count, #:inner
+               mov PERSDATA, ROWDATA
+               jmp #deltaloop
+                                          
+
+count         long      0
+baseptr       long      0
+ROWDATA       long      0
+PERSDATA      long      0
+XOREDATA      long      0
+SEP           long      %11011110_10101101_10111110_11101111
+STOP_BITS     long      $FFFF_FF00                                                                                 
+bitticks      long      8333                           ' ticks per bit
+txwork        res       1                               ' byte to transmit
+txcount       res       1                               ' bits to transmit
+txtimer       res       1                               ' tx bit timer
+txmask        long      %00000000_00000001_00000000_00000000
+
+              
