@@ -37,6 +37,8 @@ PUB main
   debugcount := $0
 
   vp.register(qs.sampleINA(@frame,1))'sample INA into <frame> array
+  
+  vp.config(string("start:terminal::terminal:1"))
   vp.config(string("var:io(base=2)"))
   vp.config(string("var:r1(base=2),r2(base=2),r3(base=2),r4(base=2),r5(base=2),r6(base=2),s1(base=2),s2(base=2),s3(base=2),s4(base=2),s5(base=2),s6(base=2),debugcount"))
   vp.share(@r1,@debugcount)          'share variable
@@ -45,30 +47,35 @@ PUB main
 
   repeat
     if r1 ^ s1
-      compare(r1, s1)
+      compare(r1, s1, 0)
       s1 := r1
     if r2 ^ s2
-      compare(r2, s2)
+      compare(r2, s2, 32)
       s2 := r2
     if r3 ^ s3
-      compare(r3, s3)
+      compare(r3, s3, 64)
       s3 := r3
     if r4 ^ s4
-      compare(r4, s4)
+      compare(r4, s4, 96)
       s4 := r4
     if r5 ^ s5
-      compare(r5, s5)
+      compare(r5, s5, 128)
       s5 := r5
     if r6 ^ s6
-      compare(r6, s6)
-      s6 := r6
+      compare(r6, s6, 160)
+      s6 := r6 
     
     
-    
-PRI compare(x,y)
-  y := x
-  debugcount += 1
-
+PRI compare(x,y, offset) | t, pintest, pd
+  
+  delta := x ^ y
+  repeat t from 31 to 0
+    pintest := |< t
+    if delta & pintest
+      if x ^ pintest
+        debugcount := ((32-t)+offset) ' Replace this with noteoff
+      else
+        debugcount := 1000+(32-t)+offset  ' Replace this with noteon!
 
 DAT
                                                                                                     
