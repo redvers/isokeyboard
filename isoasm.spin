@@ -2,11 +2,9 @@ CON
   _clkmode = xtal1 + pll16x
   _xinfreq = 5_000_000
 
-OBJ                                  'include 2 ViewPort objects:
-  vp    : "Conduit"                   'transfers data to/from PC
-  qs    : "QuickSample"               'samples INA continuously in 1 cog- up to 20Msps
+OBJ                                   'include 2 ViewPort objects:
+  fds   : "FullDuplexSerial128"
 VAR
-  long frame[400]
   long r1  
   long r2  
   long r3  
@@ -36,48 +34,53 @@ PUB main
   s6 := $0 ' bottom row historical state
   debugcount := $0
 
-  vp.register(qs.sampleINA(@frame,1))'sample INA into <frame> array
-  
-  vp.config(string("start:terminal::terminal:1"))
-  vp.config(string("var:io(base=2)"))
-  vp.config(string("var:r1(base=2),r2(base=2),r3(base=2),r4(base=2),r5(base=2),r6(base=2),s1(base=2),s2(base=2),s3(base=2),s4(base=2),s5(base=2),s6(base=2),debugcount"))
-  vp.share(@r1,@debugcount)          'share variable
   cognew(@entrypoint, @r1)
-'  cognew(@delta, @r1)
 
+  fds.start(31,30,%0000, 38400)
+ 
   repeat
-    if r1 ^ s1
-      compare(r1, s1, 0)
-      s1 := r1
-    if r2 ^ s2
-      compare(r2, s2, 32)
-      s2 := r2
-    if r3 ^ s3
-      compare(r3, s3, 64)
-      s3 := r3
-    if r4 ^ s4
-      compare(r4, s4, 96)
-      s4 := r4
-    if r5 ^ s5
-      compare(r5, s5, 128)
-      s5 := r5
-    if r6 ^ s6
-      compare(r6, s6, 160)
-      s6 := r6 
+'   if r1 ^ s1
+      compare(@r1, @s1, 0)
+'      s1 := r1
+'   if r2 ^ s2
+      compare(@r2, @s2, 1)
+'      s2 := r2
+'   if r3 ^ s3
+      compare(@r3, @s3, 0)
+'      s3 := r3
+'   if r4 ^ s4
+      compare(@r4, @s4, 1)
+'      s4 := r4
+'   if r5 ^ s5
+      compare(@r5, @s5, 0)
+'      s5 := r5
+'   if r6 ^ s6
+      compare(@r6, @s6, 1)
+'      s6 := r6             
     
     
-PRI compare(x,y, offset) | t, pintest, pd
-  
-  delta := x ^ y
+PRI compare(x, y, offset) | t, pintest, pintestmask, tx, ty, delta
   repeat t from 31 to 0
     pintest := |< t
-    if delta & pintest
-      if x ^ pintest
-        debugcount := ((32-t)+offset) ' Replace this with noteoff
-      else
-        debugcount := 1000+(32-t)+offset  ' Replace this with noteon!
+    delta := LONG[y] ^ LONG[x]
+    if (delta & pintest)
+      if (LONG[y] & pintest)
+        fds.tx($80)  ' noteoff
+        fds.tx((95-(t*2))+offset)
+        fds.tx($40)
+        !pintest
+        LONG[y] := LONG[y] & pintest
+        next                                                       
 
-DAT
+      if (LONG[x] & pintest)
+    
+        fds.tx($90)   'noteon
+        fds.tx((95-(t*2))+offset)
+        fds.tx($40)
+        LONG[y] := LONG[y] | pintest
+        next
+  
+DAT                                                               
                                                                                                     
               org 0 
 entrypoint    mov Mem, PAR
@@ -119,7 +122,7 @@ entrypoint    mov Mem, PAR
         IF_NZ mov SCANPIN, #1       ' If it is, sets the active row to 1.
               jmp #:outerloop       ' ... and back for another snapshot
 
-DIRMASK       long %00000110_00000000_00000000_01111111
+DIRMASK       long %00000110_00001000_00000000_01111111
 LOADPIN       long %00000010_00000000_00000000_00000000
 CLKPIN        long %00000100_00000000_00000000_00000000
 SERPIN        long %00001000_00000000_00000000_00000000
@@ -129,119 +132,3 @@ BITCNTR       long %00000000_00000000_00000000_00000000
 KEYSTATE      long %00000000_00000000_00000000_00000000
 Mem           long %00000000_00000000_00000000_00000000
 MemVec        long %00000000_00000000_00000000_00000000                 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-org 0
-delta         mov baseptr, PAR              
-
-' Soooo... read the row scan data from main memory...
-deltaloop     rdlong ROWDATA, baseptr
-' Next, we must check for changes.  If no changae, we can look back around.
-              xor ROWDATA, PERSDATA             NR,WZ
-        IF_Z  jmp #deltaloop        ' Short Circuit
-
-' If we reached this point, then there must be a change.
-              mov count, #$20   ' We have 32 keys
-
-:inner        rol PERSDATA, count  NR,WZ
-        IF_NZ jmp #:notedon
-              jmp #:notedoff
-
-:notedon      rol ROWDATA, count   NR,WZ
-              
-        IF_Z  jmp #:sendnoteoff
-              djnz count, #:inner  ' Note still on - no change.  Decrement + loop
-              mov PERSDATA, ROWDATA
-              jmp #deltaloop
-
-        
-:notedoff     rol ROWDATA, count   NR,WZ
-              ' Note was already off       
-       IF_NZ  jmp #:sendnoteon
-              djnz count, #:inner
-              mov PERSDATA, ROWDATA
-              jmp #deltaloop
-                                                                   
-:sendnoteoff  mov txwork, #83
-              jmp #:transmit
-              
-:sendnoteon   mov txwork, #82
-              jmp #:transmit
-
-:transmit      or txwork, STOP_BITS               ' set stop bit(s)
-               shl     txwork, #1                      ' add start bit
-               mov     txcount, #11                    ' start + 8 data + 2 stop
-               mov     txtimer, bitticks               ' load bit timing
-               add     txtimer, cnt                    ' sync with system counter
-
-:txbit         shr     txwork, #1              wc      ' move bit0 to C
-               muxc    outa, txmask                    ' output the bit
-               waitcnt txtimer, bitticks               ' let timer expire, reload   
-               djnz    txcount, #:txbit                 ' update bit count
-
-               djnz count, #:inner
-               mov PERSDATA, ROWDATA
-               jmp #deltaloop
-                                          
-
-count         long      0
-baseptr       long      0
-ROWDATA       long      0
-PERSDATA      long      0
-XOREDATA      long      0
-SEP           long      %11011110_10101101_10111110_11101111
-STOP_BITS     long      $FFFF_FF00                                                                                 
-bitticks      long      8333                           ' ticks per bit
-txwork        res       1                               ' byte to transmit
-txcount       res       1                               ' bits to transmit
-txtimer       res       1                               ' tx bit timer
-txmask        long      %00000000_00000001_00000000_00000000
-
-              
